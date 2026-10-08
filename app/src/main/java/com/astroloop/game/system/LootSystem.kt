@@ -51,6 +51,12 @@ class LootSystem(
             }
         }
 
+        // Repair kit: its own roll, so being fully upgraded doesn't stop it. Skips tiny fragments.
+        if (asteroid.size != AsteroidSize.SMALL && shouldDropRepairKit(state, ship, kotlin.random.Random.nextFloat())) {
+            spawnRepairKit(asteroid.position.x, asteroid.position.y)
+            state.lastRepairKitDropTime = state.survivalTime
+        }
+
         // Astro Loop evolution diamond: regular enemies don't spawn in this mode so
         // diamonds can only arrive via asteroid destruction.
         // hasEvolvedThisGame mirrors astroLoopEvolutionUsed (set together in GameSurfaceView);
@@ -188,6 +194,14 @@ class LootSystem(
         }.map { it.id }
     }
 
+    private fun spawnRepairKit(x: Float, y: Float) {
+        val kit = EntityPools.powerUps.obtain()
+        kit.initializeAsRepairKit(
+            x = x + (kotlin.random.Random.nextFloat() - 0.5f) * 20f,
+            y = y + (kotlin.random.Random.nextFloat() - 0.5f) * 20f
+        )
+    }
+
     private fun spawnUpgradePowerUp(x: Float, y: Float) {
         val upgradeableWeapons = upgradeableWeaponIds()
         val upgradeablePassives = upgradeablePassiveIds()
@@ -210,4 +224,26 @@ class LootSystem(
             id = randomId
         )
     }
+}
+
+/**
+ * Whether a destroyed asteroid should drop a repair kit. [roll] is a uniform 0..1 sample, passed in
+ * so the rule is testable. Needs a damaged hull (a kit is worthless at full HP), is off in corruption
+ * runs like the upgrade drop, respects a cooldown, and gets likelier the lower the hull is.
+ */
+internal fun shouldDropRepairKit(state: GameState, ship: Ship, roll: Float): Boolean {
+    if (state.isCorruptionRun) return false
+    if (!ship.isActive || ship.maxHealth <= 0f || ship.health >= ship.maxHealth) return false
+    if (state.survivalTime - state.lastRepairKitDropTime < GameConfig.REPAIR_KIT_COOLDOWN) return false
+    val missing = (1f - ship.health / ship.maxHealth).coerceIn(0f, 1f)
+    val chance = GameConfig.REPAIR_KIT_DROP_CHANCE + GameConfig.REPAIR_KIT_MISSING_HP_BONUS * missing
+    return roll < chance
+}
+
+/** Heals the hull by a fraction of max HP, never above max. Returns the HP actually restored. */
+internal fun applyRepairKit(ship: Ship): Float {
+    if (!ship.isActive) return 0f
+    val before = ship.health
+    ship.health = (ship.health + ship.maxHealth * GameConfig.REPAIR_KIT_HEAL_FRACTION).coerceAtMost(ship.maxHealth)
+    return ship.health - before
 }

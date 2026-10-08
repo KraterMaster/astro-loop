@@ -215,6 +215,9 @@ class GameState {
     // Track last asteroid upgrade drop time for cooldown
     var lastAsteroidUpgradeDropTime: Float = -1000f
 
+    // Last repair kit drop time, for its cooldown
+    var lastRepairKitDropTime: Float = -1000f
+
     // Track asteroid upgrades collected (for early game drop scaling)
     var asteroidUpgradesCollected: Int = 0
 
@@ -409,6 +412,7 @@ class GameState {
         score = 0
         goldCollected = 0
         lastAsteroidUpgradeDropTime = -1000f
+        lastRepairKitDropTime = -1000f
         asteroidUpgradesCollected = 0
         bossActive = false
         bossSpawned = false

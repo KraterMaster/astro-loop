@@ -138,9 +138,56 @@ class UpgradeSelectionRenderer {
         color = 0x99000000.toInt()
     }
 
+    // Reroll / Ban buttons. Every draw sets every property it depends on (see the note above).
+    private val buttonFillPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+        color = 0xFF111122.toInt()
+    }
+
+    private val buttonBorderPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        color = 0xFFFFFFFF.toInt()
+    }
+
+    private val buttonTextPaint = Paint().apply {
+        isAntiAlias = true
+        color = 0xFFFFFFFF.toInt()
+        textSize = 28f
+        typeface = FontManager.getRegular()
+        textAlign = Paint.Align.CENTER
+    }
+
+    private val banHintPaint = Paint().apply {
+        isAntiAlias = true
+        color = BAN_COLOR
+        textSize = 24f
+        typeface = FontManager.getRegular()
+        textAlign = Paint.Align.CENTER
+    }
+
+    private val banCardOverlayPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+        color = BAN_COLOR
+    }
+
     private var layout: ScreenLayout = ScreenLayout.compute(GameConfig.DESIGN_WIDTH, GameConfig.DESIGN_HEIGHT)
 
     val cardRects = mutableListOf<RectF>()
+
+    enum class UpgradeButton { REROLL, BAN }
+
+    /** Button hit areas. Empty rects when the buttons are not shown. */
+    val rerollRect = RectF()
+    val banRect = RectF()
+    private var buttonsShown = false
+
+    /** Set by GameSurfaceView so an activated button takes the same path a tap takes. */
+    var onButtonActivated: ((UpgradeButton) -> Unit)? = null
 
     /**
      * The icon size the last card actually drew at, `NaN` before the first render — a seam.
@@ -167,6 +214,10 @@ class UpgradeSelectionRenderer {
     var onCardActivated: ((Int) -> Unit)? = null
 
     companion object {
+        private val BAN_COLOR = 0xFFFF4444.toInt()
+        private const val BUTTON_HEIGHT = 84f
+        private const val BUTTON_GAP_BELOW_CARDS = 36f
+
         /** A card's share of the content rect. Read by the layout and by the portrait cap. */
         const val CARD_W_FRACTION = 0.30f
         const val CARD_H_FRACTION = 0.42f
@@ -240,7 +291,12 @@ class UpgradeSelectionRenderer {
         canvas.drawColor(0xAA000000.toInt())
 
         // Title
-        val title = if (state.luckyStarAnimating) "LUCKY STAR!" else "CHOOSE UPGRADE"
+        val banArmed = upgradeSystem?.banMode == true
+        val title = when {
+            state.luckyStarAnimating -> "LUCKY STAR!"
+            banArmed -> "TAP A CARD TO BAN"
+            else -> "CHOOSE UPGRADE"
+        }
         canvas.drawText(title, content.centerX, content.top + content.height * 0.12f, titlePaint)
 
         // Calculate card layout - bigger cards with comfortable spacing
@@ -271,6 +327,12 @@ class UpgradeSelectionRenderer {
                 }
             }
         }
+
+        if (banArmed) {
+            for (rect in cardRects) canvas.drawRect(rect, banCardOverlayPaint)
+        }
+
+        renderButtons(canvas, options, state, upgradeSystem, cardY + cardHeight)
 
         focusRegistry.setDefault("card:0")
         focusRegistry.commit()
@@ -563,6 +625,95 @@ class UpgradeSelectionRenderer {
         return text.split(Regex("\n|,\\s*|\\s+and\\s+|\\s*&\\s*"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Reroll and Ban sit under the cards. They are shown only for a regular selection: never for an
+     * evolution choice, and never while Lucky Star is choosing for the player.
+     */
+    private fun renderButtons(
+        canvas: Canvas,
+        options: List<UpgradeOption>,
+        state: GameState,
+        upgradeSystem: UpgradeSystem?,
+        cardsBottom: Float
+    ) {
+        buttonsShown = upgradeSystem != null &&
+            options.isNotEmpty() &&
+            options.none { it.isEvolution } &&
+            !state.hasLuckyStar &&
+            !state.luckyStarAnimating
+        if (!buttonsShown || upgradeSystem == null) {
+            rerollRect.setEmpty()
+            banRect.setEmpty()
+            return
+        }
+
+        val content = layout.content
+        val buttonWidth = content.width * CARD_W_FRACTION
+        val gap = content.width * 0.05f
+        val totalWidth = buttonWidth * 2 + gap
+        val left = content.left + (content.width - totalWidth) / 2
+        val top = cardsBottom + BUTTON_GAP_BELOW_CARDS
+
+        rerollRect.set(left, top, left + buttonWidth, top + BUTTON_HEIGHT)
+        banRect.set(left + buttonWidth + gap, top, left + totalWidth, top + BUTTON_HEIGHT)
+
+        val canReroll = upgradeSystem.canReroll()
+        val canBan = upgradeSystem.canBan()
+        val banArmed = upgradeSystem.banMode
+
+        drawButton(canvas, rerollRect, "REROLL x${upgradeSystem.rerollsLeft}", canReroll, false)
+        // An armed BAN stays pressable so it can be cancelled.
+        drawButton(canvas, banRect, if (banArmed) "CANCEL" else "BAN x${upgradeSystem.bansLeft}", canBan || banArmed, banArmed)
+
+        val bannedCount = upgradeSystem.bannedIds.size
+        if (bannedCount > 0) {
+            banHintPaint.textAlign = Paint.Align.CENTER
+            banHintPaint.textSize = 22f
+            banHintPaint.color = 0xFFAAAAAA.toInt()
+            canvas.drawText("BANNED: $bannedCount", content.centerX, top + BUTTON_HEIGHT + 40f, banHintPaint)
+            banHintPaint.color = BAN_COLOR
+        }
+
+        focusRegistry.add(FocusTarget("btn:reroll", rerollRect, canReroll) {
+            onButtonActivated?.invoke(UpgradeButton.REROLL)
+        })
+        focusRegistry.add(FocusTarget("btn:ban", banRect, canBan || banArmed) {
+            onButtonActivated?.invoke(UpgradeButton.BAN)
+        })
+    }
+
+    private fun drawButton(canvas: Canvas, rect: RectF, label: String, enabled: Boolean, highlighted: Boolean) {
+        buttonFillPaint.color = 0xFF111122.toInt()
+        canvas.drawRect(rect, buttonFillPaint)
+
+        buttonBorderPaint.strokeWidth = 4f
+        buttonBorderPaint.color = when {
+            highlighted -> BAN_COLOR
+            enabled -> 0xFFFFFFFF.toInt()
+            else -> 0xFF555555.toInt()
+        }
+        canvas.drawRect(rect, buttonBorderPaint)
+
+        buttonTextPaint.textAlign = Paint.Align.CENTER
+        buttonTextPaint.color = when {
+            highlighted -> BAN_COLOR
+            enabled -> 0xFFFFFFFF.toInt()
+            else -> 0xFF666666.toInt()
+        }
+        fitTextSize(label, rect.width() - 20f, buttonTextPaint, 28f)
+        canvas.drawText(label, rect.centerX(), rect.centerY() + buttonTextPaint.textSize * 0.35f, buttonTextPaint)
+    }
+
+    /** Touch hit-test for the buttons — parallel to the focus targets, like [getSelectedOption]. */
+    fun getButtonAt(x: Float, y: Float): UpgradeButton? {
+        if (!buttonsShown) return null
+        return when {
+            rerollRect.contains(x, y) -> UpgradeButton.REROLL
+            banRect.contains(x, y) -> UpgradeButton.BAN
+            else -> null
+        }
     }
 
     fun getSelectedOption(x: Float, y: Float): Int {

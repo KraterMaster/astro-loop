@@ -1318,6 +1318,26 @@ class VectorRenderer(
                     }
                 }
             }
+            PowerUpType.REPAIR_KIT -> {
+                val px = powerUp.position.x
+                val py = powerUp.position.y
+                val alpha = powerUp.getFadeAlpha()
+                val glowPulse = (sin(System.currentTimeMillis() / 350.0) * 0.25 + 0.75).toFloat()
+
+                // Soft ring so it reads as different from the cyan upgrade diamonds
+                shapeRenderer.setColor(GameConfig.REPAIR_KIT_COLOR)
+                shapeRenderer.setStrokeWidth(2f)
+                shapeRenderer.setAlpha(alpha * 0.3f * glowPulse)
+                shapeRenderer.drawCircle(canvas, px, py, size * 1.5f, false)
+
+                // Green circle body with a thick medical-style plus
+                shapeRenderer.setAlpha(alpha * 0.9f)
+                shapeRenderer.setStrokeWidth(3f)
+                shapeRenderer.drawCircle(canvas, px, py, size, false)
+                shapeRenderer.drawCross(canvas, px, py, size * 0.6f)
+                shapeRenderer.setStrokeWidth(2f)
+                shapeRenderer.drawCircle(canvas, px, py, size * 0.12f, true)
+            }
             PowerUpType.EVOLUTION_DIAMOND -> {
                 val px = powerUp.position.x
                 val py = powerUp.position.y
@@ -2009,7 +2029,11 @@ class VectorRenderer(
             val arrowAngle = atan2(dy, dx)
 
             // Draw triangular arrow pointing toward upgrade
-            val arrowColor = if (powerUp.type == PowerUpType.EVOLUTION_DIAMOND) 0xFFFFD700.toInt() else GameConfig.COLOR_POWERUP
+            val arrowColor = when (powerUp.type) {
+                PowerUpType.EVOLUTION_DIAMOND -> 0xFFFFD700.toInt()
+                PowerUpType.REPAIR_KIT -> GameConfig.REPAIR_KIT_COLOR
+                else -> GameConfig.COLOR_POWERUP
+            }
             shapeRenderer.setColor(arrowColor)
             shapeRenderer.setStrokeWidth(2f)
 

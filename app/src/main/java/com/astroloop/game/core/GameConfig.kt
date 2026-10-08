@@ -92,6 +92,17 @@ object GameConfig {
     // Upgrade selection
     const val UPGRADE_CHOICES = 3
 
+    // Repair kit: an asteroid drop that restores hull HP (not shields)
+    const val REPAIR_KIT_DROP_CHANCE = 0.04f         // base chance per non-small asteroid kill, once damaged
+    const val REPAIR_KIT_MISSING_HP_BONUS = 0.08f    // extra chance added at 0% hull (scales with missing HP)
+    const val REPAIR_KIT_COOLDOWN = 20f              // seconds between repair kit drops
+    const val REPAIR_KIT_HEAL_FRACTION = 0.30f       // fraction of max HP restored per kit
+    val REPAIR_KIT_COLOR = 0xFF44FF66.toInt()        // green
+
+    // Reroll / ban charges, per run, for the upgrade selection screen
+    const val UPGRADE_REROLLS_PER_RUN = 3
+    const val UPGRADE_BANS_PER_RUN = 2
+
     // Starfield
     const val STARS_FAR_COUNT = 50
     const val STARS_MID_COUNT = 30
