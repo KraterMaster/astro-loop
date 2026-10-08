@@ -25,7 +25,98 @@ class UpgradeSystem(
     var unlockedWeaponIds: Set<String> = emptySet()
     var unlockedPassiveIds: Set<String> = emptySet()
 
-    fun generateUpgradeOptions(state: GameState): List<UpgradeOption> {
+    // ─── Reroll / Ban (per run) ──────────────────────────────────────
+
+    var rerollsLeft: Int = GameConfig.UPGRADE_REROLLS_PER_RUN
+        private set
+    var bansLeft: Int = GameConfig.UPGRADE_BANS_PER_RUN
+        private set
+
+    private val banned = linkedSetOf<String>()
+
+    /** Ids banned this run. They never appear in a regular upgrade selection again. */
+    val bannedIds: Set<String> get() = banned
+
+    /** True while the player has armed BAN and the next card tapped will be banned. */
+    var banMode: Boolean = false
+        private set
+
+    /** Call at the start of every run. */
+    fun resetRunModifiers() {
+        rerollsLeft = GameConfig.UPGRADE_REROLLS_PER_RUN
+        bansLeft = GameConfig.UPGRADE_BANS_PER_RUN
+        banned.clear()
+        banMode = false
+    }
+
+    /** Evolution choices are never rerolled or banned — only regular selections are. */
+    fun canModifyPending(): Boolean =
+        pendingOptions.isNotEmpty() && pendingOptions.none { it.isEvolution }
+
+    fun canReroll(): Boolean = rerollsLeft > 0 && canModifyPending()
+
+    fun canBan(): Boolean = bansLeft > 0 && canModifyPending()
+
+    /** Arms or disarms ban mode. Returns the new mode. Cannot be armed with no bans left. */
+    fun toggleBanMode(): Boolean {
+        banMode = if (banMode) false else canBan()
+        return banMode
+    }
+
+    fun cancelBanMode() {
+        banMode = false
+    }
+
+    /**
+     * Replaces the pending options with a fresh set, preferring ones not currently shown.
+     * Costs one reroll. Returns false (and costs nothing) if there is nothing different to show.
+     */
+    fun reroll(state: GameState): Boolean {
+        if (!canReroll()) return false
+        val before = pendingOptions
+        val beforeIds = before.map { it.id }.toSet()
+
+        var next = generateUpgradeOptions(state, excluded = beforeIds)
+        if (next.size < before.size) next = generateUpgradeOptions(state)
+
+        if (next.isEmpty() || next.map { it.id }.toSet() == beforeIds) {
+            pendingOptions = before
+            return false
+        }
+        rerollsLeft--
+        banMode = false
+        return true
+    }
+
+    /**
+     * Bans the option at [index] for the rest of the run and swaps in a replacement, leaving the
+     * other cards as they are. If no replacement exists the card is simply removed. Refused
+     * (and costs nothing) if it would leave the player with no options at all.
+     */
+    fun banOption(index: Int, state: GameState): Boolean {
+        if (bansLeft <= 0 || !canModifyPending() || index !in pendingOptions.indices) return false
+        val before = pendingOptions
+        val target = before[index]
+        val keptIds = before.filterIndexed { i, _ -> i != index }.map { it.id }.toSet()
+
+        banned.add(target.id)
+        val replacement = generateUpgradeOptions(state, excluded = keptIds).firstOrNull()
+        val result = before.toMutableList()
+        if (replacement != null) result[index] = replacement else result.removeAt(index)
+
+        if (result.isEmpty()) {
+            banned.remove(target.id)
+            pendingOptions = before
+            return false
+        }
+        pendingOptions = result
+        bansLeft--
+        banMode = false
+        return true
+    }
+
+    fun generateUpgradeOptions(state: GameState, excluded: Set<String> = emptySet()): List<UpgradeOption> {
+        banMode = false
         val options = mutableListOf<UpgradeOption>()
         val selected = mutableSetOf<String>()
 
@@ -53,7 +144,8 @@ class UpgradeSystem(
 
         // Categorize weapons (only if we can add new weapons or already own them)
         for (weaponDef in WeaponDefinitions.getBaseWeapons()
-            .filter { it.id in unlockedWeaponIds && !state.hasEvolutionOf(it.id) }) {
+            .filter { it.id in unlockedWeaponIds && !state.hasEvolutionOf(it.id) &&
+                it.id !in banned && it.id !in excluded }) {
             val currentLevel = state.getWeaponLevel(weaponDef.id)
             if (currentLevel < GameConfig.WEAPON_MAX_LEVEL) {
                 if (currentLevel > 0) {
@@ -76,7 +168,8 @@ class UpgradeSystem(
         }
 
         // Categorize passives (only if we can add new passives or already own them)
-        for (passiveDef in PassiveDefinitions.getAllPassives().filter { it.id in unlockedPassiveIds }) {
+        for (passiveDef in PassiveDefinitions.getAllPassives()
+            .filter { it.id in unlockedPassiveIds && it.id !in banned && it.id !in excluded }) {
             val currentStacks = state.getPassiveStacks(passiveDef.id)
 
             // Skip one-time passives if already owned
@@ -269,6 +362,7 @@ class UpgradeSystem(
         if (index < 0 || index >= pendingOptions.size) return null
         val selected = pendingOptions[index]
         pendingOptions = emptyList()
+        banMode = false
         return selected
     }
 
@@ -319,6 +413,7 @@ class UpgradeSystem(
 
     fun clearPendingOptions() {
         pendingOptions = emptyList()
+        banMode = false
     }
 
     /**

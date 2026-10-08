@@ -683,7 +683,8 @@ class GameSurfaceView(
         FontManager.initialize(context)
         // Set once here rather than beside each initialize(layout) call — there are three of
         // those, and a callback assigned three times is three chances for them to disagree.
-        upgradeSelectionRenderer.onCardActivated = { index -> applySelectedUpgrade(index) }
+        upgradeSelectionRenderer.onCardActivated = { index -> handleUpgradeCardActivated(index) }
+        upgradeSelectionRenderer.onButtonActivated = { button -> handleUpgradeButton(button) }
     }
 
     private fun applyScreenDimensions(physW: Int, physH: Int) {
@@ -784,6 +785,7 @@ class GameSurfaceView(
 
         // Reset state
         state.reset()
+        upgradeSystem.resetRunModifiers()
         wasFullyUpgraded = false
         state.bestTime = highScoreManager.getBestTime()
         state.highScore = highScoreManager.getHighScore()
@@ -2895,6 +2897,17 @@ class GameSurfaceView(
             )
         }
 
+        // Process repair kit collection (instant heal, doesn't pause game)
+        for (kit in collisionResult.repairKitsCollected) {
+            val healed = applyRepairKit(ship)
+            ship.healthBarTimer = 2f  // show the hull bar so the heal is visible
+            SoundManager.playSFX("sfx_powerup_pickup", 0.5f)
+            visualEffects.addHitFlash(kit.position.x, kit.position.y, 24f, GameConfig.REPAIR_KIT_COLOR)
+            if (healed > 0f) {
+                visualEffects.addExplosion(ship.position.x, ship.position.y, ship.radius * 1.6f, GameConfig.REPAIR_KIT_COLOR)
+            }
+        }
+
         // Process evolution diamond collection (opens evolution selection)
         if (collisionResult.evolutionDiamondCollected != null) {
             handleEvolutionDiamondCollected()
@@ -3900,13 +3913,55 @@ class GameSurfaceView(
 
         // Check for tap on upgrade option
         if (touchController.consumeTap()) {
+            val button = upgradeSelectionRenderer.getButtonAt(
+                touchController.lastTapX,
+                touchController.lastTapY
+            )
+            if (button != null) {
+                handleUpgradeButton(button)
+                return
+            }
+
             val selectedIndex = upgradeSelectionRenderer.getSelectedOption(
                 touchController.lastTapX,
                 touchController.lastTapY
             )
 
-            applySelectedUpgrade(selectedIndex)
+            handleUpgradeCardActivated(selectedIndex)
         }
+    }
+
+    /** A card was tapped or focused: bans it if BAN is armed, otherwise picks it. */
+    private fun handleUpgradeCardActivated(index: Int) {
+        if (index < 0) return
+        if (!upgradeSystem.banMode) {
+            applySelectedUpgrade(index)
+            return
+        }
+        if (upgradeSystem.banOption(index, state)) {
+            onUpgradeOptionsChanged()
+        } else {
+            // Nothing to swap in (or no bans left): drop out of ban mode rather than trap the player.
+            upgradeSystem.cancelBanMode()
+        }
+    }
+
+    private fun handleUpgradeButton(button: UpgradeSelectionRenderer.UpgradeButton) {
+        when (button) {
+            UpgradeSelectionRenderer.UpgradeButton.REROLL -> {
+                if (upgradeSystem.reroll(state)) onUpgradeOptionsChanged()
+            }
+            UpgradeSelectionRenderer.UpgradeButton.BAN -> {
+                upgradeSystem.toggleBanMode()
+                SoundManager.playSFX("sfx_ui_tap")
+            }
+        }
+    }
+
+    /** The offered set changed under the player — keep telemetry on what they are really seeing. */
+    private fun onUpgradeOptionsChanged() {
+        state.telemetryLastOfferedOptions = upgradeSystem.getPendingOptions().map { it.id }
+        SoundManager.playSFX("sfx_ui_tap")
     }
 
     /**

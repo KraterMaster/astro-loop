@@ -8,7 +8,8 @@ enum class PowerUpType {
     WEAPON,
     PASSIVE,
     SCORE_PICKUP,       // Star dust (asteroids) or credits (enemies)
-    EVOLUTION_DIAMOND   // Elite diamond from Tier 4 enemies — contains evolution
+    EVOLUTION_DIAMOND,  // Elite diamond from Tier 4 enemies — contains evolution
+    REPAIR_KIT          // Asteroid drop that heals the ship's hull HP
 }
 
 class PowerUp : Entity() {
@@ -99,6 +100,18 @@ class PowerUp : Entity() {
         pulsePhase = 0f
         isActive = true
         isBeingPulled = false
+        radius = GameConfig.POWERUP_SIZE
+    }
+
+    fun initializeAsRepairKit(x: Float, y: Float) {
+        position.set(x, y)
+        velocity.zero()
+        type = PowerUpType.REPAIR_KIT
+        itemId = ""
+        pulsePhase = 0f
+        isActive = true
+        isBeingPulled = false
+        fadeOutTimer = -1f
         radius = GameConfig.POWERUP_SIZE
     }
 

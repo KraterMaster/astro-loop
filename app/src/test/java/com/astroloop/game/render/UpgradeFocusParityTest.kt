@@ -52,14 +52,15 @@ class UpgradeFocusParityTest {
     fun `every card publishes a focus target`() {
         val options = renderOnce()
 
-        assertEquals(options.size, renderer.focusRegistry.targets().size)
+        val cardTargets = renderer.focusRegistry.targets().filter { it.id.startsWith("card:") }
+        assertEquals(options.size, cardTargets.size)
     }
 
     @Test
     fun `each focus target resolves to the same card the touch path would pick`() {
         renderOnce()
 
-        for (target in renderer.focusRegistry.targets()) {
+        for (target in renderer.focusRegistry.targets().filter { it.id.startsWith("card:") }) {
             val expectedIndex = target.id.substringAfter("card:").toInt()
             val touchIndex = renderer.getSelectedOption(
                 target.rect.centerX(),

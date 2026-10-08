@@ -14,7 +14,8 @@ data class CollisionResult(
     val evolutionDiamondCollected: PowerUp?,     // Evolution diamond (opens evolution selection)
     val scorePickupsCollected: List<PowerUp>,    // Score pickups (immediately add points)
     val explosions: List<ExplosionEvent>,
-    val lightningForks: List<LightningForkEvent>  // Lightning fork events
+    val lightningForks: List<LightningForkEvent>, // Lightning fork events
+    val repairKitsCollected: List<PowerUp> = emptyList()  // Repair kits (heal immediately, no menu)
 )
 
 data class LightningForkEvent(
@@ -107,6 +108,7 @@ class CollisionSystem {
     ): CollisionResult {
         val asteroidHits = mutableListOf<Pair<Projectile, Asteroid>>()
         val scorePickupsCollected = mutableListOf<PowerUp>()
+        val repairKitsCollected = mutableListOf<PowerUp>()
         val explosions = mutableListOf<ExplosionEvent>()
         val lightningForks = mutableListOf<LightningForkEvent>()
 
@@ -116,9 +118,9 @@ class CollisionSystem {
 
         processProjectileAsteroidHits(projectiles, asteroidHits, explosions, lightningForks)
         val shipHit = processShipAsteroidHit(ship)
-        val (powerUpCollected, evolutionDiamondCollected) = processPickupCollection(ship, powerUps, pickupRange, pullSpeed, scorePickupsCollected)
+        val (powerUpCollected, evolutionDiamondCollected) = processPickupCollection(ship, powerUps, pickupRange, pullSpeed, scorePickupsCollected, repairKitsCollected)
 
-        return CollisionResult(asteroidHits, shipHit, powerUpCollected, evolutionDiamondCollected, scorePickupsCollected, explosions, lightningForks)
+        return CollisionResult(asteroidHits, shipHit, powerUpCollected, evolutionDiamondCollected, scorePickupsCollected, explosions, lightningForks, repairKitsCollected)
     }
 
     private fun processProjectileAsteroidHits(
@@ -211,7 +213,8 @@ class CollisionSystem {
         powerUps: List<PowerUp>,
         pickupRange: Float,
         pullSpeed: Float,
-        scorePickupsCollected: MutableList<PowerUp>
+        scorePickupsCollected: MutableList<PowerUp>,
+        repairKitsCollected: MutableList<PowerUp>
     ): Pair<PowerUp?, PowerUp?> {
         var powerUpCollected: PowerUp? = null
         var evolutionDiamondCollected: PowerUp? = null
@@ -230,6 +233,11 @@ class CollisionSystem {
                 when (powerUp.type) {
                     PowerUpType.SCORE_PICKUP -> {
                         scorePickupsCollected.add(powerUp)
+                        powerUp.isActive = false
+                    }
+                    PowerUpType.REPAIR_KIT -> {
+                        // Instant: never opens the upgrade menu, and never competes with it
+                        repairKitsCollected.add(powerUp)
                         powerUp.isActive = false
                     }
                     PowerUpType.EVOLUTION_DIAMOND -> {
